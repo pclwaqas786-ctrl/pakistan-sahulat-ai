@@ -12,11 +12,18 @@ America.gov (US, Sep 2026) se inspired — Pakistan ki sarkari services ke liye 
 
 1. Repo GitHub par push karo (neeche).
 2. [share.streamlit.io](https://share.streamlit.io) → New app → repo select karo, main file `app.py`.
-3. **App settings → Secrets** me ye add karo:
+3. **App settings → Secrets** me kam az kam ek key add karo (TOML format):
    ```toml
    GROQ_API_KEY = "gsk_...tumhari Groq key..."
    ```
-   Key free me banti hai: console.groq.com/keys (sirf email, no credit card).
+   **Backup (optional lekin recommended):** ek provider fail ho to app khud agle par chali jati hai.
+   ```toml
+   GEMINI_API_KEY = "AIza... (https://aistudio.google.com/app/apikey)"
+   NVIDIA_API_KEY = "nvapi-... (https://build.nvidia.com/settings/api-keys)"
+   MISTRAL_API_KEY = "... (https://console.mistral.ai/api-keys)"
+   OPENROUTER_API_KEY = "sk-or-... (https://openrouter.ai/workspaces/default/keys)"
+   ```
+   Sab free hain (sirf email signup, no credit card). Voice input ke liye `GROQ_API_KEY` lazmi hai.
 4. Deploy. Ho gaya.
 
 ## Local run

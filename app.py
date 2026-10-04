@@ -10,7 +10,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
-from core import KB, build_messages, kb_match
+from core import KB, PROVIDERS, build_messages, kb_match, llm_chat
 
 try:
     from pypdf import PdfReader
@@ -150,24 +150,17 @@ st.markdown(
 )
 
 api_key = st.secrets.get("GROQ_API_KEY", "")
-if not api_key:
-    st.warning("GROQ_API_KEY Streamlit secrets me set karo (App settings → Secrets).")
+has_any_key = any((st.secrets.get(p["secret"]) or "").strip() for p in PROVIDERS)
+if not has_any_key:
+    st.warning("Koi API key nahi mili. App settings → Secrets me kam az kam ek key add karo: "
+               "`GROQ_API_KEY` (ya GEMINI_API_KEY / NVIDIA_API_KEY / MISTRAL_API_KEY / OPENROUTER_API_KEY).")
     st.stop()
 
 
-def groq_chat(messages, model="openai/gpt-oss-120b", max_tokens=800) -> str:
-    r = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "messages": messages,
-              "max_tokens": max_tokens, "temperature": 0.3},
-        timeout=90,
-    )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
-
-
 def groq_transcribe(audio_bytes: bytes) -> str:
+    """Voice input — Groq Whisper (free). Needs GROQ_API_KEY in secrets."""
+    if not api_key:
+        raise RuntimeError("Voice ke liye GROQ_API_KEY secrets me chahiye.")
     r = requests.post(
         "https://api.groq.com/openai/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -264,7 +257,8 @@ with tab_chat:
                     msgs = build_messages(st.session_state.history[:-1], query, matches)
                     if extra:
                         msgs[0]["content"] += "\n" + extra
-                    answer = groq_chat(msgs)
+                    answer, provider = llm_chat(msgs, lambda s: st.secrets.get(s, ""))
+                    answer += f"\n\n*via {provider}*"
                 except Exception as e:
                     answer = f"Maazrat, is waqt jawab nahi de saka ({e}). Dobara koshish karo."
             st.markdown(answer)
