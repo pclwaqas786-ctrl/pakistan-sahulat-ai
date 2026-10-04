@@ -51,9 +51,8 @@ PROVIDERS = [
     {"name": "Groq", "secret": "GROQ_API_KEY",
      "base": "https://api.groq.com/openai/v1",
      "model": "openai/gpt-oss-120b"},
-    {"name": "Gemini", "secret": "GEMINI_API_KEY",
-     "base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-     "model": "gemini-2.0-flash"},
+    {"name": "Gemini", "secret": "GEMINI_API_KEY", "kind": "gemini",
+     "model": "gemini-3.8-flash"},
     {"name": "NVIDIA", "secret": "NVIDIA_API_KEY",
      "base": "https://integrate.api.nvidia.com/v1",
      "model": "meta/llama-3.3-70b-instruct"},
@@ -74,6 +73,44 @@ SIGNUP_LINKS = {
 }
 
 
+def _openai_chat(p, key, messages, max_tokens, temperature, timeout):
+    r = requests.post(
+        p["base"].rstrip("/") + "/chat/completions",
+        headers={"Authorization": f"Bearer {key}"},
+        json={"model": p["model"], "messages": messages,
+              "max_tokens": max_tokens, "temperature": temperature},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"].strip()
+
+
+def _gemini_chat(p, key, messages, max_tokens, temperature, timeout):
+    """Native generateContent — the OpenAI-compat shim returns empty content
+    for the current gemini-3.x models, so Gemini gets its own path."""
+    system, contents = None, []
+    for m in messages:
+        role, text = m.get("role"), m.get("content", "")
+        if role == "system" and system is None:
+            system = text
+        else:
+            contents.append({"role": "model" if role == "assistant" else "user",
+                             "parts": [{"text": text}]})
+    body = {"contents": contents,
+            "generationConfig": {"maxOutputTokens": max_tokens,
+                                 "temperature": temperature}}
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+    r = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{p['model']}:generateContent",
+        headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+        json=body, timeout=timeout,
+    )
+    r.raise_for_status()
+    parts = r.json()["candidates"][0]["content"]["parts"]
+    return "".join(pt.get("text", "") for pt in parts).strip()
+
+
 def llm_chat(messages, get_key, max_tokens=800, temperature=0.3, timeout=60):
     """Try each configured provider in order. Returns (answer, provider_name).
 
@@ -85,15 +122,13 @@ def llm_chat(messages, get_key, max_tokens=800, temperature=0.3, timeout=60):
         if not key:
             continue
         try:
-            r = requests.post(
-                p["base"].rstrip("/") + "/chat/completions",
-                headers={"Authorization": f"Bearer {key}"},
-                json={"model": p["model"], "messages": messages,
-                      "max_tokens": max_tokens, "temperature": temperature},
-                timeout=timeout,
-            )
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip(), p["name"]
+            if p.get("kind") == "gemini":
+                answer = _gemini_chat(p, key, messages, max_tokens, temperature, timeout)
+            else:
+                answer = _openai_chat(p, key, messages, max_tokens, temperature, timeout)
+            if not answer:
+                raise RuntimeError("empty reply")
+            return answer, p["name"]
         except Exception as e:
             failures.append(f"{p['name']}: {e}")
     raise RuntimeError(
