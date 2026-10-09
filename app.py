@@ -11,6 +11,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from core import KB, PROVIDERS, build_messages, kb_match, llm_chat
+from super_tabs import (FX_CURRENCIES, FX_NAMES, PK_CITIES, analyze_csv,
+                        convert, fetch_news, fetch_rates, fetch_weather)
 
 try:
     from pypdf import PdfReader
@@ -179,15 +181,17 @@ HERO = """
   <p>Hukumat se jo chahiye, yahin se shuru karo — sawal likho ya bolo.</p>
   <div class="stats">
     <span class="stat">24 services</span>
-    <span class="stat">10 categories</span>
     <span class="stat">✈️ Live flights</span>
+    <span class="stat">🌤️ Mausam</span>
+    <span class="stat">💱 Currency</span>
     <span class="stat">100% free</span>
   </div>
 </div>
 """
 
-tab_chat, tab_flights, tab_hajj, tab_dir = st.tabs(
-    ["💬 Assistant", "✈️ Live Flights", "🕋 Hajj & Umrah", "📚 Directory"]
+tab_chat, tab_flights, tab_hajj, tab_dir, tab_weather, tab_news, tab_fx, tab_ai = st.tabs(
+    ["💬 Assistant", "✈️ Live Flights", "🕋 Hajj & Umrah", "📚 Directory",
+     "🌤️ Mausam", "📰 Taza Khabrain", "💱 Currency", "🤖 AI Tools"]
 )
 
 # ================= TAB 1: CHAT =================
@@ -374,6 +378,157 @@ with tab_dir:
                 cards += (f"<div class='svc-card'><span class='cat'>{cat}</span>"
                           f"<h4>{s['title']}</h4><p>{s['summary']}</p><div>{links}</div></div>")
             st.markdown(cards, unsafe_allow_html=True)
+
+# ================= TAB 5: MAUSAM =================
+with tab_weather:
+    st.markdown("<div class='sec-title'>🌤️ Mausam</div>"
+                "<div class='sec-sub'>Pakistan ke baray shehron ka taza mausam — Open-Meteo (bina key ke, free).</div>",
+                unsafe_allow_html=True)
+    city = st.selectbox("Sheher chuno", list(PK_CITIES.keys()))
+    lat, lon = PK_CITIES[city]
+
+    @st.cache_data(ttl=600)
+    def _wx(lat, lon):
+        return fetch_weather(lat, lon)
+
+    try:
+        w = _wx(lat, lon)
+        st.markdown(f"""<div class="stat-band">
+          <div class="stat-chip"><div class="num">{w['emoji']} {w['temp']}°C</div><div class="lbl">{city.upper()} — {w['desc'].upper()}</div></div>
+          <div class="stat-chip"><div class="num">{w['feels']}°C</div><div class="lbl">MEHSOOS HOTA HAI</div></div>
+          <div class="stat-chip"><div class="num">{w['humidity']}%</div><div class="lbl">HUMIDITY</div></div>
+          <div class="stat-chip"><div class="num">{w['wind']} km/h</div><div class="lbl">HAWA</div></div>
+        </div>""", unsafe_allow_html=True)
+        st.markdown("<div class='sec-title' style='font-size:22px'>7 din ki forecast</div>", unsafe_allow_html=True)
+        st.dataframe(
+            [{"Din": d["date"], "Mausam": f"{d['emoji']} {d['desc']}",
+              "Max (°C)": d["max"], "Min (°C)": d["min"]} for d in w["days"]],
+            use_container_width=True, hide_index=True,
+        )
+    except Exception as e:
+        st.warning(f"Mausam ka data is waqt nahi mil saka ({e}). Thori der baad try karo.")
+
+# ================= TAB 6: TAZA KHABRAIN =================
+with tab_news:
+    st.markdown("<div class='sec-title'>📰 Taza Khabrain</div>"
+                "<div class='sec-sub'>Dawn, Geo News aur Express Tribune ki taza headlines — seedha unki websites se.</div>",
+                unsafe_allow_html=True)
+
+    @st.cache_data(ttl=900)
+    def _news():
+        return fetch_news()
+
+    try:
+        items = _news()
+        if not items:
+            st.warning("Khabrain is waqt nahi mil sakin. Thori der baad refresh karo.")
+        for it in items:
+            st.markdown(
+                f"<div class='svc-card'><span class='cat'>{it['source']}</span>"
+                f"<h4>{it['title']}</h4>"
+                f"<p style='color:#6B6455;font-size:12.5px'>{it['date']}</p>"
+                f"<div><a href=\"{it['link']}\" target=\"_blank\">🔗 Poori khabar parho</a></div></div>",
+                unsafe_allow_html=True,
+            )
+    except Exception as e:
+        st.warning(f"Khabrain is waqt nahi mil sakin ({e}).")
+
+# ================= TAB 7: CURRENCY =================
+with tab_fx:
+    st.markdown("<div class='sec-title'>💱 Currency Converter</div>"
+                "<div class='sec-sub'>Taza exchange rates — USD, EUR, GBP, SAR, AED, PKR. Bina key ke, free.</div>",
+                unsafe_allow_html=True)
+
+    @st.cache_data(ttl=3600)
+    def _fx():
+        return fetch_rates()
+
+    try:
+        fx = _fx()
+        rates = fx["rates"]
+        st.caption(f"Rates date: {fx['date']} (1 USD = Rs {rates['PKR']:.2f})")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            amt = st.number_input("Raqam", min_value=0.0, value=100.0, step=10.0)
+        with c2:
+            frm = st.selectbox("From", FX_CURRENCIES, index=0)
+        with c3:
+            to = st.selectbox("To", FX_CURRENCIES, index=5)
+        result = convert(amt, frm, to, rates)
+        st.markdown(f"""<div class="stat-band"><div class="stat-chip">
+          <div class="num">{result:,.2f} {to}</div>
+          <div class="lbl">{amt:,.2f} {FX_NAMES[frm]} =</div></div></div>""",
+                    unsafe_allow_html=True)
+        st.markdown("<div class='sec-title' style='font-size:22px'>Aaj ke rates (1 unit = kitne PKR)</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(
+            [{"Currency": f"{c} — {FX_NAMES[c]}",
+              "1 unit = PKR": round(rates[c] and rates["PKR"] / rates[c], 2)}
+             for c in ["USD", "EUR", "GBP", "SAR", "AED"]],
+            use_container_width=True, hide_index=True,
+        )
+    except Exception as e:
+        st.warning(f"Rates is waqt nahi mil sakay ({e}). Thori der baad try karo.")
+
+# ================= TAB 8: AI TOOLS =================
+with tab_ai:
+    st.markdown("<div class='sec-title'>🤖 AI Tools</div>"
+                "<div class='sec-sub'>Muft AI tools — apna data upload karo, AI se sawal pocho. 100% free.</div>",
+                unsafe_allow_html=True)
+    st.markdown("<div class='sec-title' style='font-size:22px'>📊 CSV Data Analyst</div>", unsafe_allow_html=True)
+    st.write("Apni CSV file upload karo (masalan kharcha, sales, ya fees ka record) — "
+             "pehle summary dekho, phir AI se sawal pocho.")
+
+    csv_file = st.file_uploader("CSV file upload karo", type=["csv"], key="csv_up")
+    if csv_file:
+        try:
+            text = csv_file.getvalue().decode("utf-8-sig")
+            info = analyze_csv(text)
+            st.success(f"File parh li: **{info['n_rows']} rows**, **{len(info['headers'])} columns**")
+            with st.expander("🔍 Pehli 5 rows dekho"):
+                st.dataframe(info["head"], use_container_width=True)
+            with st.expander("📈 Column stats"):
+                if info["stats"]:
+                    st.dataframe(
+                        [{"Column": h, "Count": s["count"], "Min": s["min"],
+                          "Max": s["max"], "Average": s["avg"]}
+                         for h, s in info["stats"].items()],
+                        use_container_width=True, hide_index=True,
+                    )
+                else:
+                    st.write("Koi numeric column nahi mila — sirf text data hai.")
+
+            if "csv_qa" not in st.session_state:
+                st.session_state.csv_qa = []
+            for m in st.session_state.csv_qa:
+                with st.chat_message("user" if m["role"] == "user" else "assistant"):
+                    st.markdown(m["content"])
+            q = st.chat_input("Data ke baray me sawal pocho... masalan 'sab se zyada kharcha kis me hua?'")
+            if q:
+                st.session_state.csv_qa.append({"role": "user", "content": q})
+                with st.chat_message("user"):
+                    st.markdown(q)
+                with st.chat_message("assistant"):
+                    with st.spinner("Soch raha hoon..."):
+                        try:
+                            msgs = [
+                                {"role": "system",
+                                 "content": "You are a data analyst. Answer ONLY from the DATA SUMMARY below. "
+                                            "Never invent numbers not in the summary. Language: Roman Urdu, short. "
+                                            "DATA SUMMARY:\n" + info["context"]},
+                                {"role": "user", "content": q},
+                            ]
+                            answer, provider = llm_chat(msgs, lambda s: st.secrets.get(s, ""))
+                            answer += f"\n\n*via {provider}*"
+                        except Exception as e:
+                            answer = f"Maazrat, jawab nahi de saka ({e})."
+                    st.markdown(answer)
+                st.session_state.csv_qa.append({"role": "assistant", "content": answer})
+                st.rerun()
+        except Exception as e:
+            st.error(f"CSV nahi parh saka: {e}")
+    else:
+        st.info("👆 Pehle CSV upload karo — phir summary aur AI sawal-jawab yahin hoga.")
 
 st.divider()
 st.caption("Concept: America.gov (US, Sep 2026) se inspired · Unofficial demo · Flights: OpenSky Network")
