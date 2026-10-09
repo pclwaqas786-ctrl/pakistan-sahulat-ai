@@ -159,3 +159,45 @@ def analyze_csv(text: str, max_rows: int = 2000) -> dict:
         lines.append("Text columns: " + ", ".join(nonnum) + ".")
     return {"headers": headers, "n_rows": len(data), "head": head,
             "stats": stats, "context": "\n".join(lines)}
+
+
+# ---------------- Prayer Times (Aladhan, keyless) ----------------
+# https://aladhan.com/prayer-times-api — free, no signup, worldwide.
+# NOTE: api.aladhan.com issues a 302 redirect; requests follows it by default.
+METHODS = {
+    "Karachi (Univ. of Islamic Sciences)": 1,
+    "Muslim World League": 3,
+    "Egyptian General Authority": 5,
+    "Umm al-Qura (Makkah)": 4,
+    "Dubai / UAE": 16,
+    "Kuwait": 9,
+    "Qatar": 10,
+    "Iran (Ja'fari)": 7,
+}
+
+PRAYER_UR = {
+    "Fajr": ("🌅", "Fajr"), "Sunrise": ("☀️", "Tulu-e-Aftab"),
+    "Dhuhr": ("🌞", "Zuhr"), "Asr": ("🌤️", "Asr"),
+    "Maghrib": ("🌇", "Maghrib"), "Isha": ("🌙", "Isha"),
+}
+
+
+def fetch_prayer_times(city: str, country: str, method: int = 1,
+                       timeout: int = 25) -> dict:
+    """Prayer times for any city worldwide via Aladhan. Raises on failure."""
+    import requests
+    r = requests.get(
+        "https://api.aladhan.com/v1/timingsByCity",
+        params={"city": city, "country": country, "method": method},
+        headers=UA, timeout=timeout,
+    )
+    r.raise_for_status()
+    data = r.json()["data"]
+    timings = {k: v[:5] for k, v in data["timings"].items()
+               if k in PRAYER_UR}
+    hijri = data["date"]["hijri"]
+    return {
+        "timings": timings,
+        "date": data["date"]["readable"],
+        "hijri": f"{hijri['day']} {hijri['month']['en']} {hijri['year']}H",
+    }
