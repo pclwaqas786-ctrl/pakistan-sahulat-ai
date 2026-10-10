@@ -182,6 +182,46 @@ PRAYER_UR = {
 }
 
 
+def reverse_geocode(lat: float, lon: float, timeout: int = 12) -> str:
+    """City, Country from GPS coordinates (BigDataCloud, free, no key)."""
+    import requests
+    try:
+        r = requests.get(
+            "https://api.bigdatacloud.net/data/reverse-geocode-client",
+            params={"latitude": lat, "longitude": lon, "localityLanguage": "en"},
+            headers=UA, timeout=timeout,
+        )
+        r.raise_for_status()
+        d = r.json()
+        city = d.get("city") or d.get("locality") or ""
+        country = d.get("countryName") or ""
+        label = ", ".join(x for x in (city, country) if x)
+        return label or f"{lat:.3f}, {lon:.3f}"
+    except Exception:
+        return f"{lat:.3f}, {lon:.3f}"
+
+
+def fetch_prayer_times_by_coords(lat: float, lon: float, method: int = 1,
+                                 timeout: int = 12) -> dict:
+    """Prayer times by GPS coordinates via Aladhan. Raises on failure."""
+    import requests
+    from datetime import date
+    today = date.today().strftime("%d-%m-%Y")
+    r = requests.get(
+        f"https://api.aladhan.com/v1/timings/{today}",
+        params={"latitude": lat, "longitude": lon, "method": method},
+        headers=UA, timeout=timeout,
+    )
+    r.raise_for_status()
+    data = r.json()["data"]
+    timings = {k: v[:5] for k, v in data["timings"].items()
+               if k in PRAYER_UR}
+    hijri = data["date"]["hijri"]
+    return {
+        "timings": timings,
+        "date": data["date"]["readable"],
+        "hijri": f"{hijri['day']} {hijri['month']['en']} {hijri['year']}H",
+    }
 def fetch_prayer_times(city: str, country: str, method: int = 1,
                        timeout: int = 12) -> dict:
     """Prayer times for any city worldwide via Aladhan. Raises on failure."""

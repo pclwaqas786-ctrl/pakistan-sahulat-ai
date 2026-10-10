@@ -13,7 +13,8 @@ import streamlit.components.v1 as components
 from core import KB, PROVIDERS, build_messages, kb_match, llm_chat
 from super_tabs import (FX_CURRENCIES, FX_NAMES, METHODS, PK_CITIES,
                         PRAYER_UR, analyze_csv, convert, fetch_news,
-                        fetch_prayer_times, fetch_rates, fetch_weather)
+                        fetch_prayer_times, fetch_prayer_times_by_coords,
+                        fetch_rates, fetch_weather, reverse_geocode)
 
 try:
     from pypdf import PdfReader
@@ -548,15 +549,71 @@ elif choice == TABS[7]:
 elif choice == TABS[8]:
     st.markdown("<div class='sec-title'>🕌 Namaz Times</div>"
                 "<div class='sec-sub'>Duniya bhar ke kisi bhi sheher ke namaz ke auqat — live. "
-                "Sheher + mulk likho ya neeche se chuno.</div>",
+                "Sheher + mulk likho, neeche se chuno, ya <b>live location</b> use karo.</div>",
                 unsafe_allow_html=True)
 
+    qp = st.query_params
+    live = qp.get("live") == "1" and qp.get("lat") and qp.get("lon")
+
+    if not live:
+        components.html("""<script>
+function useLiveLoc(){
+  if(!navigator.geolocation){alert('Is browser me location support nahi hai.');return;}
+  navigator.geolocation.getCurrentPosition(function(pos){
+    var u=new URL(window.parent.location.href);
+    u.searchParams.set('live','1');
+    u.searchParams.set('lat',pos.coords.latitude.toFixed(5));
+    u.searchParams.set('lon',pos.coords.longitude.toFixed(5));
+    window.parent.location.href=u.toString();
+  },function(err){alert('Location nahi mil saki: '+err.message+' — browser me location permission do.');},
+  {timeout:15000});
+}
+</script>
+<button onclick="useLiveLoc()" style="width:100%;padding:13px;border-radius:999px;border:1.5px solid #0B3D2E;background:#0B3D2E;color:#fff;font-weight:700;font-size:15px;cursor:pointer;">📍 Meri live location use karo</button>""",
+            height=70)
+    else:
+        if st.button("✖ Live location hatayo — manual select", key="pr_nolive"):
+            st.query_params.clear()
+            st.rerun()
+
+    def _show_pt(pt, place_label, method_name):
+        st.markdown(f"""<div class="stat-band">
+          <div class="stat-chip"><div class="num">{pt['date']}</div><div class="lbl">Tareekh</div></div>
+          <div class="stat-chip"><div class="num">{pt['hijri']}</div><div class="lbl">Hijri</div></div>
+          <div class="stat-chip"><div class="num">{place_label}</div><div class="lbl">Sheher</div></div>
+        </div>""", unsafe_allow_html=True)
+        cols = st.columns(3)
+        for i, key in enumerate(["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"]):
+            emoji, ur = PRAYER_UR[key]
+            cols[i % 3].markdown(
+                f"""<div class="stat-chip" style="text-align:center;margin-bottom:12px">
+                  <div style="font-size:22px">{emoji}</div>
+                  <div class="num">{pt['timings'][key]}</div>
+                  <div class="lbl">{ur}</div></div>""",
+                unsafe_allow_html=True)
+        st.caption("Source: Aladhan API (free) · Method: " + method_name)
+
     c1, c2 = st.columns(2)
+    with c2:
+        method_name = st.selectbox("Calculation method", sorted(METHODS), index=0, key="pr_method")
+
+    if live:
+        with c1:
+            st.success("📍 Live location ON — GPS se auqat")
+        try:
+            lat_f, lon_f = float(qp["lat"]), float(qp["lon"])
+            with st.spinner("📍 Live location se auqat la raha hoon..."):
+                pt = fetch_prayer_times_by_coords(lat_f, lon_f, METHODS[method_name])
+            _show_pt(pt, "📍 " + reverse_geocode(lat_f, lon_f), method_name)
+        except Exception as e:
+            st.warning(f"Live location se auqat nahi mil sakay ({e}). Manual select try karo.")
+        st.divider()
+        st.caption("Concept: America.gov (US, Sep 2026) se inspired · Unofficial demo · Flights: OpenSky Network")
+        st.stop()
+
     with c1:
         quick = st.selectbox("⚡ Pakistani sheher (quick)", ["— khud likho —"] + sorted(PK_CITIES),
                              key="pr_quick")
-    with c2:
-        method_name = st.selectbox("Calculation method", sorted(METHODS), index=0, key="pr_method")
 
     if quick != "— khud likho —":
         city_in, country_in = quick, "Pakistan"
@@ -572,21 +629,7 @@ elif choice == TABS[8]:
             with st.spinner("Auqat la raha hoon..."):
                 pt = fetch_prayer_times(city_in.strip(), country_in.strip(),
                                         METHODS[method_name])
-            st.markdown(f"""<div class="stat-band">
-              <div class="stat-chip"><div class="num">{pt['date']}</div><div class="lbl">Tareekh</div></div>
-              <div class="stat-chip"><div class="num">{pt['hijri']}</div><div class="lbl">Hijri</div></div>
-              <div class="stat-chip"><div class="num">{city_in}, {country_in}</div><div class="lbl">Sheher</div></div>
-            </div>""", unsafe_allow_html=True)
-            cols = st.columns(3)
-            for i, key in enumerate(["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"]):
-                emoji, ur = PRAYER_UR[key]
-                cols[i % 3].markdown(
-                    f"""<div class="stat-chip" style="text-align:center;margin-bottom:12px">
-                      <div style="font-size:22px">{emoji}</div>
-                      <div class="num">{pt['timings'][key]}</div>
-                      <div class="lbl">{ur}</div></div>""",
-                    unsafe_allow_html=True)
-            st.caption("Source: Aladhan API (free) · Method: " + method_name)
+            _show_pt(pt, f"{city_in}, {country_in}", method_name)
         except Exception as e:
             st.warning(f"Auqat is waqt nahi mil sakay ({e}). Sheher/mulk ke spellings check karke dobara try karo.")
 
