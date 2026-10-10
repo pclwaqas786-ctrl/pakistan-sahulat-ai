@@ -80,6 +80,18 @@ html, body, [data-testid="stAppViewContainer"] * { font-family: 'Inter', system-
   background: #0B3D2E !important; color: #fff !important; border-color: #0B3D2E !important;
 }
 
+/* radio-as-tabs (lazy tabs): pills jaisa look */
+div[data-testid="stRadio"] > div[role="radiogroup"] { gap: 8px !important; flex-wrap: wrap !important; }
+div[data-testid="stRadio"] label {
+  background: #fff !important; border: 1.5px solid #D9D2BE !important; border-radius: 999px !important;
+  padding: 8px 18px !important; font-weight: 600 !important; margin: 0 !important; cursor: pointer;
+}
+div[data-testid="stRadio"] label p { color: #0B3D2E !important; font-size: 14px !important; margin: 0 !important; }
+div[data-testid="stRadio"] label:has(input:checked) { background: #0B3D2E !important; border-color: #0B3D2E !important; }
+div[data-testid="stRadio"] label:has(input:checked) p { color: #fff !important; }
+div[data-testid="stRadio"] input[type="radio"] { display: none !important; }
+div[data-testid="stRadio"] label > div:first-child { display: none !important; }
+
 /* suggestion pills */
 .stButton > button {
   border-radius: 999px !important; border: 1.5px solid #0B3D2E !important;
@@ -190,13 +202,14 @@ HERO = """
 </div>
 """
 
-tab_chat, tab_flights, tab_hajj, tab_dir, tab_weather, tab_news, tab_fx, tab_ai, tab_prayer = st.tabs(
-    ["💬 Assistant", "✈️ Live Flights", "🕋 Hajj & Umrah", "📚 Directory",
-     "🌤️ Mausam", "📰 Taza Khabrain", "💱 Currency", "🤖 AI Tools", "🕌 Namaz Times"]
-)
+TABS = ["💬 Assistant", "✈️ Live Flights", "🕋 Hajj & Umrah", "📚 Directory",
+        "🌤️ Mausam", "📰 Taza Khabrain", "💱 Currency", "🤖 AI Tools", "🕌 Namaz Times"]
+# LAZY TABS: sirf selected tab ka code chalta hai. (st.tabs har click par 9 tabs ke
+# network fetch chala deta tha — OpenSky hang hone par poori app freeze lagti thi.)
+choice = st.radio("Section", TABS, horizontal=True, label_visibility="collapsed", key="main_tab")
 
 # ================= TAB 1: CHAT =================
-with tab_chat:
+if choice == TABS[0]:
     st.markdown(HERO, unsafe_allow_html=True)
 
     if "history" not in st.session_state:
@@ -271,7 +284,7 @@ with tab_chat:
         st.rerun()
 
 # ================= TAB 2: LIVE FLIGHTS =================
-with tab_flights:
+elif choice == TABS[1]:
     st.markdown("<div class='sec-title'>✈️ Live Flights</div>"
                 "<div class='sec-sub'>Pakistan aur ird-gird ke airspace me is waqt jo jahaz hain — real-time ADS-B data (OpenSky Network).</div>",
                 unsafe_allow_html=True)
@@ -281,7 +294,7 @@ with tab_flights:
         r = requests.get(
             "https://opensky-network.org/api/states/all",
             params={"lamin": 23, "lomin": 60, "lamax": 38, "lomax": 78},
-            timeout=25,
+            timeout=12,
         )
         r.raise_for_status()
         flights = []
@@ -331,7 +344,7 @@ with tab_flights:
         st.warning(f"Live data is waqt nahi mil saka ({e}). Thori der baad refresh karo.")
 
 # ================= TAB 3: HAJJ & UMRAH =================
-with tab_hajj:
+elif choice == TABS[2]:
     st.markdown("<div class='sec-title'>🕋 Hajj & Umrah</div>"
                 "<div class='sec-sub'>Hajj 2027 government scheme — taza tareen maloomat. Last updated: 4 Oct 2026.</div>",
                 unsafe_allow_html=True)
@@ -362,7 +375,7 @@ with tab_hajj:
     st.caption("News sources: PakEra, Abb Takk, UrduPoint, 24 News HD (1–3 Oct 2026)")
 
 # ================= TAB 4: DIRECTORY =================
-with tab_dir:
+elif choice == TABS[3]:
     st.markdown("<div class='sec-title'>📚 Service Directory</div>"
                 "<div class='sec-sub'>24 sarkari services, 10 categories — har ek ke sath official link.</div>",
                 unsafe_allow_html=True)
@@ -381,7 +394,7 @@ with tab_dir:
             st.markdown(cards, unsafe_allow_html=True)
 
 # ================= TAB 5: MAUSAM =================
-with tab_weather:
+elif choice == TABS[4]:
     st.markdown("<div class='sec-title'>🌤️ Mausam</div>"
                 "<div class='sec-sub'>Pakistan ke baray shehron ka taza mausam — Open-Meteo (bina key ke, free).</div>",
                 unsafe_allow_html=True)
@@ -410,7 +423,7 @@ with tab_weather:
         st.warning(f"Mausam ka data is waqt nahi mil saka ({e}). Thori der baad try karo.")
 
 # ================= TAB 6: TAZA KHABRAIN =================
-with tab_news:
+elif choice == TABS[5]:
     st.markdown("<div class='sec-title'>📰 Taza Khabrain</div>"
                 "<div class='sec-sub'>Dawn, Geo News aur Express Tribune ki taza headlines — seedha unki websites se.</div>",
                 unsafe_allow_html=True)
@@ -435,7 +448,7 @@ with tab_news:
         st.warning(f"Khabrain is waqt nahi mil sakin ({e}).")
 
 # ================= TAB 7: CURRENCY =================
-with tab_fx:
+elif choice == TABS[6]:
     st.markdown("<div class='sec-title'>💱 Currency Converter</div>"
                 "<div class='sec-sub'>Taza exchange rates — USD, EUR, GBP, SAR, AED, PKR. Bina key ke, free.</div>",
                 unsafe_allow_html=True)
@@ -472,7 +485,7 @@ with tab_fx:
         st.warning(f"Rates is waqt nahi mil sakay ({e}). Thori der baad try karo.")
 
 # ================= TAB 8: AI TOOLS =================
-with tab_ai:
+elif choice == TABS[7]:
     st.markdown("<div class='sec-title'>🤖 AI Tools</div>"
                 "<div class='sec-sub'>Muft AI tools — apna data upload karo, AI se sawal pocho. 100% free.</div>",
                 unsafe_allow_html=True)
@@ -532,7 +545,7 @@ with tab_ai:
         st.info("👆 Pehle CSV upload karo — phir summary aur AI sawal-jawab yahin hoga.")
 
 # ================= TAB 9: NAMAZ TIMES =================
-with tab_prayer:
+elif choice == TABS[8]:
     st.markdown("<div class='sec-title'>🕌 Namaz Times</div>"
                 "<div class='sec-sub'>Duniya bhar ke kisi bhi sheher ke namaz ke auqat — live. "
                 "Sheher + mulk likho ya neeche se chuno.</div>",

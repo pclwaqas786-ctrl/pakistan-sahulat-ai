@@ -36,7 +36,7 @@ WMO = {
 }
 
 
-def fetch_weather(lat: float, lon: float, timeout: int = 25) -> dict:
+def fetch_weather(lat: float, lon: float, timeout: int = 12) -> dict:
     """Current + 7-day forecast from Open-Meteo. Raises on failure."""
     url = ("https://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f"
            "&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
@@ -76,7 +76,7 @@ RSS_FEEDS = [
 ]
 
 
-def fetch_news(limit_per_feed: int = 8, timeout: int = 25) -> list:
+def fetch_news(limit_per_feed: int = 8, timeout: int = 12) -> list:
     """Headlines from Pakistani news RSS feeds. Returns [{source,title,link,date}]."""
     out = []
     for source, url in RSS_FEEDS:
@@ -104,7 +104,7 @@ FX_NAMES = {"USD": "US Dollar", "EUR": "Euro", "GBP": "British Pound",
             "SAR": "Saudi Riyal", "AED": "UAE Dirham", "PKR": "Pakistani Rupee"}
 
 
-def fetch_rates(timeout: int = 25) -> dict:
+def fetch_rates(timeout: int = 12) -> dict:
     """USD-base rates from exchangerate-api.com free tier. Returns {rates, date}."""
     import json
     req = urllib.request.Request("https://api.exchangerate-api.com/v4/latest/USD",
@@ -183,7 +183,7 @@ PRAYER_UR = {
 
 
 def fetch_prayer_times(city: str, country: str, method: int = 1,
-                       timeout: int = 25) -> dict:
+                       timeout: int = 12) -> dict:
     """Prayer times for any city worldwide via Aladhan. Raises on failure."""
     import requests
     r = requests.get(
