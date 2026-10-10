@@ -34,7 +34,10 @@ st.markdown("""
 [data-testid="stAppViewContainer"] { background: #FAF7F0; }
 [data-testid="stHeader"] { background: transparent; }
 footer { visibility: hidden; }
-html, body, [data-testid="stAppViewContainer"] * { font-family: 'Inter', system-ui, sans-serif; }
+html, body { font-family: 'Inter', system-ui, sans-serif; }
+/* NOTE: kabhi `[data-testid="stAppViewContainer"] *` par font-family mat lagao — ye
+   Streamlit ke icon font ko override karke chevron ko "arrow_right" text bana deta hai
+   (expander labels double/overlap nazar aate hain). body par font inherit hota hai. */
 
 /* slim disclaimer */
 .slim-note {
