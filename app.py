@@ -594,7 +594,6 @@ function useLiveLoc(){
                   <div class="num">{pt['timings'][key]}</div>
                   <div class="lbl">{ur}</div></div>""",
                 unsafe_allow_html=True)
-        st.caption(f"Source: {pt.get('source', 'Aladhan API (free)')} · Asr Hanafi · Method: " + method_name)
 
     def _pakistan_times(city, country, method_name):
         """Pakistan -> Dawat-e-Islami (Hanafi, exact); warna Aladhan. Returns (pt, place_label)."""
@@ -630,8 +629,6 @@ function useLiveLoc(){
             _show_pt(pt, "📍 " + place, method_name)
         except Exception as e:
             st.warning(f"Live location se auqat nahi mil sakay ({e}). Manual select try karo.")
-        st.divider()
-        st.caption("Concept: America.gov (US, Sep 2026) se inspired · Unofficial demo · Flights: OpenSky Network")
         st.stop()
 
     with c1:
@@ -655,5 +652,3 @@ function useLiveLoc(){
         except Exception as e:
             st.warning(f"Auqat is waqt nahi mil sakay ({e}). Sheher/mulk ke spellings check karke dobara try karo.")
 
-st.divider()
-st.caption("Concept: America.gov (US, Sep 2026) se inspired · Unofficial demo · Flights: OpenSky Network")
