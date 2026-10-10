@@ -8,13 +8,19 @@ from pathlib import Path
 
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 from core import KB, PROVIDERS, build_messages, kb_match, llm_chat
 from super_tabs import (DI_CITY_SLUGS, FX_CURRENCIES, FX_NAMES, METHODS, PK_CITIES,
                         PRAYER_UR, analyze_csv, convert, fetch_dawateislami, fetch_news,
                         fetch_prayer_times, fetch_prayer_times_by_coords,
                         fetch_rates, fetch_weather, reverse_geocode)
+
+try:
+    from streamlit_geolocation import streamlit_geolocation
+    HAS_GEO = True
+except Exception:
+    HAS_GEO = False
+    streamlit_geolocation = None
 
 try:
     from pypdf import PdfReader
@@ -206,7 +212,7 @@ HERO = """
 </div>
 """
 
-TABS = ["💬 Assistant", "✈️ Live Flights", "🕋 Hajj & Umrah", "📚 Directory",
+TABS = ["💬 Assistant", "🕋 Hajj & Umrah", "📚 Directory",
         "🌤️ Mausam", "📰 Taza Khabrain", "💱 Currency", "🤖 AI Tools", "🕌 Namaz Times"]
 # LAZY TABS: sirf selected tab ka code chalta hai. (st.tabs har click par 9 tabs ke
 # network fetch chala deta tha — OpenSky hang hone par poori app freeze lagti thi.)
@@ -287,68 +293,8 @@ if choice == TABS[0]:
         st.session_state.history.append({"role": "assistant", "content": answer})
         st.rerun()
 
-# ================= TAB 2: LIVE FLIGHTS =================
+# ================= TAB 2: HAJJ & UMRAH =================
 elif choice == TABS[1]:
-    st.markdown("<div class='sec-title'>✈️ Live Flights</div>"
-                "<div class='sec-sub'>Pakistan aur ird-gird ke airspace me is waqt jo jahaz hain — real-time ADS-B data (OpenSky Network).</div>",
-                unsafe_allow_html=True)
-
-    @st.cache_data(ttl=60)
-    def fetch_flights():
-        r = requests.get(
-            "https://opensky-network.org/api/states/all",
-            params={"lamin": 23, "lomin": 60, "lamax": 38, "lomax": 78},
-            timeout=12,
-        )
-        r.raise_for_status()
-        flights = []
-        for s in r.json().get("states") or []:
-            if s[5] is None or s[6] is None:
-                continue
-            flights.append({
-                "callsign": (s[1] or "N/A").strip(),
-                "country": s[2] or "?",
-                "lat": round(s[6], 3), "lon": round(s[5], 3),
-                "alt_ft": int(s[7] * 3.281) if s[7] else 0,
-                "speed_kmh": int(s[9] * 3.6) if s[9] else 0,
-                "heading": int(s[10]) if s[10] else 0,
-            })
-        return flights
-
-    try:
-        flights = fetch_flights()
-        st.markdown(f"""<div class="stat-band">
-          <div class="stat-chip"><div class="num">{len(flights)}</div><div class="lbl">LIVE FLIGHTS</div></div>
-          <div class="stat-chip"><div class="num">60s</div><div class="lbl">REFRESH</div></div>
-          <div class="stat-chip"><div class="num">ADS-B</div><div class="lbl">SOURCE</div></div>
-        </div>""", unsafe_allow_html=True)
-        markers = "\n".join(
-            f"L.marker([{f['lat']},{f['lon']}],{{icon:L.divIcon({{className:'',"
-            f"html:'<div style=\"transform:rotate({f['heading']}deg);font-size:20px\">✈️</div>',"
-            f"iconSize:[24,24],iconAnchor:[12,12]}})}})"
-            f".addTo(map).bindPopup(\"<b>{f['callsign']}</b><br>{f['country']}<br>"
-            f"{f['alt_ft']:,} ft · {f['speed_kmh']} km/h\");"
-            for f in flights[:150]
-        )
-        html = f"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <div id="m" style="height:480px;border-radius:16px;box-shadow:0 8px 24px rgba(11,61,46,.12)"></div>
-        <script>var map=L.map('m').setView([30.0,69.0],5);
-        L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-        {{attribution:'© OpenStreetMap'}}).addTo(map);{markers}</script>"""
-        components.html(html, height=500)
-        if st.checkbox("Flight list dikhao", value=False):
-            st.dataframe(
-                [{"Callsign": f["callsign"], "Country": f["country"],
-                  "Altitude (ft)": f["alt_ft"], "Speed (km/h)": f["speed_kmh"]}
-                 for f in flights[:100]],
-                use_container_width=True,
-            )
-    except Exception as e:
-        st.warning(f"Live data is waqt nahi mil saka ({e}). Thori der baad refresh karo.")
-
-# ================= TAB 3: HAJJ & UMRAH =================
-elif choice == TABS[2]:
     st.markdown("<div class='sec-title'>🕋 Hajj & Umrah</div>"
                 "<div class='sec-sub'>Hajj 2027 government scheme — taza tareen maloomat. Last updated: 4 Oct 2026.</div>",
                 unsafe_allow_html=True)
@@ -378,8 +324,8 @@ elif choice == TABS[2]:
              "ke approved list me check karo (mora.gov.pk). Bina license wale agent ko paise mat do.")
     st.caption("News sources: PakEra, Abb Takk, UrduPoint, 24 News HD (1–3 Oct 2026)")
 
-# ================= TAB 4: DIRECTORY =================
-elif choice == TABS[3]:
+# ================= TAB 3: DIRECTORY =================
+elif choice == TABS[2]:
     st.markdown("<div class='sec-title'>📚 Service Directory</div>"
                 "<div class='sec-sub'>24 sarkari services, 10 categories — har ek ke sath official link.</div>",
                 unsafe_allow_html=True)
@@ -397,8 +343,8 @@ elif choice == TABS[3]:
                           f"<h4>{s['title']}</h4><p>{s['summary']}</p><div>{links}</div></div>")
             st.markdown(cards, unsafe_allow_html=True)
 
-# ================= TAB 5: MAUSAM =================
-elif choice == TABS[4]:
+# ================= TAB 4: MAUSAM =================
+elif choice == TABS[3]:
     st.markdown("<div class='sec-title'>🌤️ Mausam</div>"
                 "<div class='sec-sub'>Pakistan ke baray shehron ka taza mausam — Open-Meteo (bina key ke, free).</div>",
                 unsafe_allow_html=True)
@@ -426,8 +372,8 @@ elif choice == TABS[4]:
     except Exception as e:
         st.warning(f"Mausam ka data is waqt nahi mil saka ({e}). Thori der baad try karo.")
 
-# ================= TAB 6: TAZA KHABRAIN =================
-elif choice == TABS[5]:
+# ================= TAB 5: TAZA KHABRAIN =================
+elif choice == TABS[4]:
     st.markdown("<div class='sec-title'>📰 Taza Khabrain</div>"
                 "<div class='sec-sub'>Dawn, Geo News aur Express Tribune ki taza headlines — seedha unki websites se.</div>",
                 unsafe_allow_html=True)
@@ -451,8 +397,8 @@ elif choice == TABS[5]:
     except Exception as e:
         st.warning(f"Khabrain is waqt nahi mil sakin ({e}).")
 
-# ================= TAB 7: CURRENCY =================
-elif choice == TABS[6]:
+# ================= TAB 6: CURRENCY =================
+elif choice == TABS[5]:
     st.markdown("<div class='sec-title'>💱 Currency Converter</div>"
                 "<div class='sec-sub'>Taza exchange rates — USD, EUR, GBP, SAR, AED, PKR. Bina key ke, free.</div>",
                 unsafe_allow_html=True)
@@ -488,8 +434,8 @@ elif choice == TABS[6]:
     except Exception as e:
         st.warning(f"Rates is waqt nahi mil sakay ({e}). Thori der baad try karo.")
 
-# ================= TAB 8: AI TOOLS =================
-elif choice == TABS[7]:
+# ================= TAB 7: AI TOOLS =================
+elif choice == TABS[6]:
     st.markdown("<div class='sec-title'>🤖 AI Tools</div>"
                 "<div class='sec-sub'>Muft AI tools — apna data upload karo, AI se sawal pocho. 100% free.</div>",
                 unsafe_allow_html=True)
@@ -548,36 +494,27 @@ elif choice == TABS[7]:
     else:
         st.info("👆 Pehle CSV upload karo — phir summary aur AI sawal-jawab yahin hoga.")
 
-# ================= TAB 9: NAMAZ TIMES =================
-elif choice == TABS[8]:
+# ================= TAB 8: NAMAZ TIMES =================
+elif choice == TABS[7]:
     st.markdown("<div class='sec-title'>🕌 Namaz Times</div>"
                 "<div class='sec-sub'>Pakistan ke auqat <b>Dawat-e-Islami</b> ke mutabiq (Hanafi) — live. "
                 "Duniya bhar ke kisi bhi sheher ke liye sheher + mulk likho, neeche se chuno, ya <b>live location</b> use karo.</div>",
                 unsafe_allow_html=True)
 
-    qp = st.query_params
-    live = qp.get("live") == "1" and qp.get("lat") and qp.get("lon")
+    geo = None
+    if HAS_GEO:
+        st.markdown("<div class='sec-sub' style='margin-bottom:2px'>📍 <b>Live location:</b> "
+                    "neeche 📍 button dabao aur location ki ijazat do — GPS se auqat khud aa jayenge.</div>",
+                    unsafe_allow_html=True)
+        geo = streamlit_geolocation()
+    live = bool(geo and geo.get("latitude"))
 
-    if not live:
-        components.html("""<script>
-function useLiveLoc(){
-  if(!navigator.geolocation){alert('Is browser me location support nahi hai.');return;}
-  navigator.geolocation.getCurrentPosition(function(pos){
-    var u=new URL(window.parent.location.href);
-    u.searchParams.set('live','1');
-    u.searchParams.set('lat',pos.coords.latitude.toFixed(5));
-    u.searchParams.set('lon',pos.coords.longitude.toFixed(5));
-    window.parent.location.href=u.toString();
-  },function(err){alert('Location nahi mil saki: '+err.message+' — browser me location permission do.');},
-  {timeout:15000});
-}
-</script>
-<button onclick="useLiveLoc()" style="width:100%;padding:13px;border-radius:999px;border:1.5px solid #0B3D2E;background:#0B3D2E;color:#fff;font-weight:700;font-size:15px;cursor:pointer;">📍 Meri live location use karo</button>""",
-            height=70)
-    else:
+    if live:
         if st.button("✖ Live location hatayo — manual select", key="pr_nolive"):
-            st.query_params.clear()
+            st.session_state.pop("loc", None)
             st.rerun()
+    elif not HAS_GEO:
+        st.info("📍 Live location ke liye app update ho rahi hai — neeche manual select use karo.")
 
     def _show_pt(pt, place_label, method_name):
         st.markdown(f"""<div class="stat-band">
@@ -615,7 +552,7 @@ function useLiveLoc(){
         with c1:
             st.success("📍 Live location ON — GPS se auqat")
         try:
-            lat_f, lon_f = float(qp["lat"]), float(qp["lon"])
+            lat_f, lon_f = float(geo["latitude"]), float(geo["longitude"])
             with st.spinner("📍 Live location se auqat la raha hoon..."):
                 place = reverse_geocode(lat_f, lon_f)
                 di_city = place.split(",")[0].strip()
