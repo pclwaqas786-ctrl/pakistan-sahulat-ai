@@ -11,8 +11,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from core import KB, PROVIDERS, build_messages, kb_match, llm_chat
-from super_tabs import (FX_CURRENCIES, FX_NAMES, METHODS, PK_CITIES,
-                        PRAYER_UR, analyze_csv, convert, fetch_news,
+from super_tabs import (DI_CITY_SLUGS, FX_CURRENCIES, FX_NAMES, METHODS, PK_CITIES,
+                        PRAYER_UR, analyze_csv, convert, fetch_dawateislami, fetch_news,
                         fetch_prayer_times, fetch_prayer_times_by_coords,
                         fetch_rates, fetch_weather, reverse_geocode)
 
@@ -551,8 +551,8 @@ elif choice == TABS[7]:
 # ================= TAB 9: NAMAZ TIMES =================
 elif choice == TABS[8]:
     st.markdown("<div class='sec-title'>🕌 Namaz Times</div>"
-                "<div class='sec-sub'>Duniya bhar ke kisi bhi sheher ke namaz ke auqat — live. "
-                "Sheher + mulk likho, neeche se chuno, ya <b>live location</b> use karo.</div>",
+                "<div class='sec-sub'>Pakistan ke auqat <b>Dawat-e-Islami</b> ke mutabiq (Hanafi) — live. "
+                "Duniya bhar ke kisi bhi sheher ke liye sheher + mulk likho, neeche se chuno, ya <b>live location</b> use karo.</div>",
                 unsafe_allow_html=True)
 
     qp = st.query_params
@@ -594,11 +594,23 @@ function useLiveLoc(){
                   <div class="num">{pt['timings'][key]}</div>
                   <div class="lbl">{ur}</div></div>""",
                 unsafe_allow_html=True)
-        st.caption("Source: Aladhan API (free) · Method: " + method_name)
+        st.caption(f"Source: {pt.get('source', 'Aladhan API (free)')} · Asr Hanafi · Method: " + method_name)
+
+    def _pakistan_times(city, country, method_name):
+        """Pakistan -> Dawat-e-Islami (Hanafi, exact); warna Aladhan. Returns (pt, place_label)."""
+        c, co = city.strip(), country.strip()
+        if co.lower() == "pakistan" and c.title() in DI_CITY_SLUGS:
+            try:
+                return fetch_dawateislami(c), f"{c.title()}, Pakistan"
+            except Exception:
+                pass
+        return fetch_prayer_times(c, co, METHODS[method_name]), f"{c}, {co}"
 
     c1, c2 = st.columns(2)
     with c2:
-        method_name = st.selectbox("Calculation method", sorted(METHODS), index=0, key="pr_method")
+        _ms = sorted(METHODS)
+        _di = _ms.index("Karachi (Univ. of Islamic Sciences)") if "Karachi (Univ. of Islamic Sciences)" in _ms else 0
+        method_name = st.selectbox("Calculation method", _ms, index=_di, key="pr_method")
 
     if live:
         with c1:
@@ -606,8 +618,16 @@ function useLiveLoc(){
         try:
             lat_f, lon_f = float(qp["lat"]), float(qp["lon"])
             with st.spinner("📍 Live location se auqat la raha hoon..."):
-                pt = fetch_prayer_times_by_coords(lat_f, lon_f, METHODS[method_name])
-            _show_pt(pt, "📍 " + reverse_geocode(lat_f, lon_f), method_name)
+                place = reverse_geocode(lat_f, lon_f)
+                di_city = place.split(",")[0].strip()
+                if "Pakistan" in place and di_city.title() in DI_CITY_SLUGS:
+                    try:
+                        pt = fetch_dawateislami(di_city)
+                    except Exception:
+                        pt = fetch_prayer_times_by_coords(lat_f, lon_f, METHODS[method_name])
+                else:
+                    pt = fetch_prayer_times_by_coords(lat_f, lon_f, METHODS[method_name])
+            _show_pt(pt, "📍 " + place, method_name)
         except Exception as e:
             st.warning(f"Live location se auqat nahi mil sakay ({e}). Manual select try karo.")
         st.divider()
@@ -630,9 +650,8 @@ function useLiveLoc(){
     if st.button("🕌 Auqat dekho", key="pr_go", use_container_width=True):
         try:
             with st.spinner("Auqat la raha hoon..."):
-                pt = fetch_prayer_times(city_in.strip(), country_in.strip(),
-                                        METHODS[method_name])
-            _show_pt(pt, f"{city_in}, {country_in}", method_name)
+                pt, place_label = _pakistan_times(city_in, country_in, method_name)
+            _show_pt(pt, place_label, method_name)
         except Exception as e:
             st.warning(f"Auqat is waqt nahi mil sakay ({e}). Sheher/mulk ke spellings check karke dobara try karo.")
 

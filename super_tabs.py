@@ -201,15 +201,16 @@ def reverse_geocode(lat: float, lon: float, timeout: int = 12) -> str:
         return f"{lat:.3f}, {lon:.3f}"
 
 
-def fetch_prayer_times_by_coords(lat: float, lon: float, method: int = 1,
+def fetch_prayer_times_by_coords(lat: float, lon: float, method: int = 1, school: int = 1,
                                  timeout: int = 12) -> dict:
-    """Prayer times by GPS coordinates via Aladhan. Raises on failure."""
+    """Prayer times by GPS coordinates via Aladhan. school=1 -> Hanafi Asr.
+    Raises on failure."""
     import requests
     from datetime import date
     today = date.today().strftime("%d-%m-%Y")
     r = requests.get(
         f"https://api.aladhan.com/v1/timings/{today}",
-        params={"latitude": lat, "longitude": lon, "method": method},
+        params={"latitude": lat, "longitude": lon, "method": method, "school": school},
         headers=UA, timeout=timeout,
     )
     r.raise_for_status()
@@ -221,14 +222,16 @@ def fetch_prayer_times_by_coords(lat: float, lon: float, method: int = 1,
         "timings": timings,
         "date": data["date"]["readable"],
         "hijri": f"{hijri['day']} {hijri['month']['en']} {hijri['year']}H",
+        "source": "Aladhan API (free)",
     }
-def fetch_prayer_times(city: str, country: str, method: int = 1,
+def fetch_prayer_times(city: str, country: str, method: int = 1, school: int = 1,
                        timeout: int = 12) -> dict:
-    """Prayer times for any city worldwide via Aladhan. Raises on failure."""
+    """Prayer times for any city worldwide via Aladhan. school=1 -> Hanafi Asr.
+    Raises on failure."""
     import requests
     r = requests.get(
         "https://api.aladhan.com/v1/timingsByCity",
-        params={"city": city, "country": country, "method": method},
+        params={"city": city, "country": country, "method": method, "school": school},
         headers=UA, timeout=timeout,
     )
     r.raise_for_status()
@@ -236,8 +239,80 @@ def fetch_prayer_times(city: str, country: str, method: int = 1,
     timings = {k: v[:5] for k, v in data["timings"].items()
                if k in PRAYER_UR}
     hijri = data["date"]["hijri"]
-    return {
+    out = {
         "timings": timings,
         "date": data["date"]["readable"],
         "hijri": f"{hijri['day']} {hijri['month']['en']} {hijri['year']}H",
     }
+    out["source"] = "Aladhan API (free)"
+    return out
+
+
+DI_CITY_SLUGS = {
+    "Karachi": "karachi", "Lahore": "lahore", "Islamabad": "islamabad",
+    "Rawalpindi": "rawalpindi", "Peshawar": "peshawar", "Quetta": "quetta",
+    "Multan": "multan", "Faisalabad": "faisalabad", "Sialkot": "sialkot",
+    "Gujranwala": "gujranwala", "Bahawalpur": "bahawalpur", "Hyderabad": "hyderabad",
+}
+
+
+def _di_hhmm(s: str) -> str:
+    """'05:10:51 AM' -> '05:10' (24h)."""
+    import re
+    m = re.match(r"(\d+):(\d+)(?::\d+)?\s*(AM|PM)", s.strip(), re.I)
+    if not m:
+        raise ValueError(f"bad time: {s}")
+    h, mi, ap = int(m.group(1)), m.group(2), m.group(3).upper()
+    if ap == "PM" and h != 12:
+        h += 12
+    if ap == "AM" and h == 12:
+        h = 0
+    return f"{h:02d}:{mi}"
+
+
+def fetch_dawateislami(city: str, timeout: int = 12) -> dict:
+    """Dawat-e-Islami prayer times (Hanafi) for Pakistani cities, scraped from
+    dawateislami.net monthly timetable. Same dict shape as fetch_prayer_times.
+    Raises on failure (caller falls back to Aladhan)."""
+    import re
+    import requests
+    from datetime import date
+    slug = DI_CITY_SLUGS.get(city.strip().title())
+    if not slug:
+        slug = re.sub(r"[^a-z-]", "", city.strip().lower().replace(" ", "-"))
+    r = requests.get(
+        f"https://www.dawateislami.net/prayer-times/world/pakistan/{slug}-prayer-times",
+        headers=UA, timeout=timeout,
+    )
+    r.raise_for_status()
+    tables = re.findall(r'<table class="table-striped table-bordered">(.*?)</table>',
+                        r.text, re.S)
+    cal = next((t for t in tables if "Dahwa-e-Kubra" in t and "Asr(Hanafi)" in t), None)
+    if not cal:
+        raise ValueError("Dawat-e-Islami timetable nahi mila")
+    today = str(date.today().day)
+    for row in re.findall(r"<tr>(.*?)</tr>", cal, re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).strip()
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        # day, Fajr, Sunrise, Dahwa, Zuhr, AsrShafi, AsrHanafi, Maghrib, IshaShafi, IshaHanafi
+        if len(cells) >= 10 and cells[0] == today:
+            hijri = ""
+            try:
+                hr = requests.get("https://api.aladhan.com/v1/gToH",
+                                  params={"date": date.today().strftime("%d-%m-%Y")},
+                                  headers=UA, timeout=timeout)
+                hd = hr.json()["data"]["hijri"]
+                hijri = f"{hd['day']} {hd['month']['en']} {hd['year']}H"
+            except Exception:
+                pass
+            return {
+                "timings": {
+                    "Fajr": _di_hhmm(cells[1]), "Sunrise": _di_hhmm(cells[2]),
+                    "Dhuhr": _di_hhmm(cells[4]), "Asr": _di_hhmm(cells[6]),
+                    "Maghrib": _di_hhmm(cells[7]), "Isha": _di_hhmm(cells[9]),
+                },
+                "date": date.today().strftime("%d %b %Y"),
+                "hijri": hijri,
+                "source": "Dawat-e-Islami",
+            }
+    raise ValueError("aaj ki tareekh timetable me nahi mili")
